@@ -22,6 +22,11 @@ python3 -m http.server 8000   # http://localhost:8000
 node --test timer.test.js     # phase, round and beep maths
 ```
 
+## Release
+
+Bump `VERSION` in `sw.js` with every change you ship. Installed phones download the new files in the
+background and show **New version available · Update**. Without a bump they keep the old version.
+
 `og.png` and the PNG icons are rendered from `og.svg` and `icon.svg` with `rsvg-convert`.
 
 Inspired by [greggman/interval-timer](https://github.com/greggman/interval-timer).

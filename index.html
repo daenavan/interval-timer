@@ -94,6 +94,12 @@
   #presetList .pick small { display: block; opacity: .75; }
   #presetList .on { outline: 2px solid #fff; }
 
+  .update { position: fixed; z-index: 1; left: 16px; right: 16px; top: calc(8px + env(safe-area-inset-top)); max-width: 28rem; margin: 0 auto;
+    display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px; border-radius: 14px; background: #111827; box-shadow: 0 4px 16px rgb(0 0 0 / .35); }
+  .update[hidden] { display: none; }
+  .update span { flex: 1; }
+  .update button { min-height: 44px; padding: 0 14px; border-radius: 10px; background: #374151; }
+  .update .primary { background: #fff; color: #111; font-weight: 700; }
   .about { max-width: 40rem; margin: 0 auto; padding: 32px 16px calc(48px + env(safe-area-inset-bottom)); line-height: 1.6; }
   .about h1 { margin: 0 0 8px; }
   .about h2 { font-size: 1.15rem; margin: 24px 0 4px; }
@@ -120,6 +126,12 @@
     <button id="reset">Reset</button>
     <button id="start">Start</button>
   </div>
+</div>
+
+<div id="update" class="update" role="status" hidden>
+  <span>New version available</span>
+  <button id="updateLater" aria-label="Later">✕</button>
+  <button id="updateBtn" class="primary">Update</button>
 </div>
 
 <section class="about">
@@ -460,7 +472,28 @@ document.addEventListener('visibilitychange', () => {
   tick();
 });
 
-navigator.serviceWorker?.register('./sw.js');
+// ---- updates: a new release downloads in the background, then we ask before switching ----
+const sw = navigator.serviceWorker;
+let updating = false;
+sw?.register('./sw.js').then((reg) => {
+  const offer = (worker) => {
+    if (!worker || !sw.controller) return; // no controller = first install, nothing to update from
+    $('update').hidden = false;
+    $('updateBtn').onclick = () => {
+      updating = true;
+      worker.postMessage('update'); // a running workout reopens paused after the reload
+    };
+  };
+  offer(reg.waiting);
+  reg.addEventListener('updatefound', () => {
+    const worker = reg.installing;
+    worker.addEventListener('statechange', () => worker.state === 'installed' && offer(worker));
+  });
+  // installed apps can stay open for days: look for a release whenever the app comes back
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && reg.update());
+});
+$('updateLater').onclick = () => ($('update').hidden = true);
+sw?.addEventListener('controllerchange', () => updating && location.reload());
 
 // ---- boot: reopen paused where a reloaded or killed run left off ----
 const saved = load('it.run', null);
