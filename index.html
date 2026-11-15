@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Interval Timer – free HIIT &amp; Tabata timer</title>
+<meta name="theme-color" content="#15803d">
+<style>
+  :root {
+    color-scheme: dark;
+    --work: #15803d; --rest: #dc2626; --ready: #b45309; --done: #4b5563;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #fff; background: var(--bg); transition: background-color .3s; --bg: var(--work); }
+  body[data-phase=rest] { --bg: var(--rest); }
+  body[data-phase=ready] { --bg: var(--ready); }
+  body[data-phase=done] { --bg: var(--done); }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action: manipulation; }
+  .app {
+    min-height: 100svh; display: flex; flex-direction: column;
+    max-width: 48rem; margin: 0 auto;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header { display: flex; justify-content: space-between; gap: 8px; padding: 12px 16px; }
+  header button { background: rgb(0 0 0 / .2); border-radius: 12px; padding: 8px 14px; min-height: 48px; text-align: left; }
+  #preset small { display: block; opacity: .85; font-size: .8rem; }
+  #settings { font-size: 1.5rem; min-width: 48px; text-align: center; }
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; }
+  #label { font-size: clamp(1.5rem, 7vw, 3rem); font-weight: 800; letter-spacing: .1em; }
+  #count { font-size: min(36vw, 45vh); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  #count.long { font-size: min(28vw, 42vh); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; padding: 0 16px; }
+  .stats b { display: block; font-size: clamp(1.25rem, 6vw, 2rem); font-variant-numeric: tabular-nums; }
+  .stats small { text-transform: uppercase; font-size: .75rem; letter-spacing: .08em; opacity: .9; }
+  .controls { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; padding: 16px; }
+  .controls button { min-height: 72px; font-size: 1.5rem; font-weight: 800; border-radius: 16px; }
+  #reset { background: rgb(0 0 0 / .2); }
+  #start { background: #fff; color: #111; }
+</style>
+</head>
+<body data-phase="work">
+<div class="app">
+  <header>
+    <button id="preset" aria-label="Choose preset"><span id="presetName"></span><small id="presetInfo"></small></button>
+    <button id="settings" aria-label="Settings">⚙</button>
+  </header>
+  <main>
+    <div id="label"></div>
+    <div id="count" role="timer" aria-live="off">0:00</div>
+    <div class="stats">
+      <div><small>elapsed</small><b id="elapsed">0:00</b></div>
+      <div><small>round</small><b id="round">0/0</b></div>
+      <div><small>remaining</small><b id="left">0:00</b></div>
+    </div>
+  </main>
+  <div class="controls">
+    <button id="reset">Reset</button>
+    <button id="start">Start</button>
+  </div>
+</div>
+
+<script type="module">
+import { STARTERS, normalizePreset, normalizeSettings, buildPhases, stateAt, cueBetween } from './timer.js';
+
+const $ = (id) => document.getElementById(id);
+const load = (key, fallback) => {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+};
+const save = (key, value) => {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+};
+
+// ---- state ----
+const storedPresets = load('it.presets', null);
+const state = {
+  presets: Array.isArray(storedPresets) && storedPresets.length ? storedPresets.map(normalizePreset) : STARTERS.map((p) => ({ ...p })),
+  selectedId: load('it.selected', null),
+  settings: normalizeSettings(load('it.settings', null)),
+  phases: [],
+  run: null,        // copy of the preset this run uses
+  startedAt: null,  // Date.now() - elapsed, while running
+  pausedAt: 0,      // elapsed ms, while not running
+  prevMs: 0,        // elapsed ms at the last tick, for cues
+};
+if (!state.presets.some((p) => p.id === state.selectedId)) state.selectedId = state.presets[0].id;
+const selected = () => state.presets.find((p) => p.id === state.selectedId);
+const running = () => state.startedAt !== null;
+const elapsed = () => (running() ? Date.now() - state.startedAt : state.pausedAt);
+
+function resetRun() {
+  pause();
+  state.run = { ...selected() };
+  state.phases = buildPhases(state.run, state.settings);
+  state.pausedAt = state.prevMs = 0;
+  save('it.run', null);
+  render();
+}
+
+function jumpTo(ms) {
+  if (running()) state.startedAt = Date.now() - ms;
+  else state.pausedAt = ms;
+  state.prevMs = ms;
+  play('long');
+  tick();
+}
+
+// ---- sound ----
+let audio;
+function unlockAudio() {
+  audio ??= new (window.AudioContext || window.webkitAudioContext)();
+  audio.resume();
+}
+function tone(freq, dur, delay = 0) {
+  if (!audio) return;
+  const t = audio.currentTime + delay;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.type = 'square';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.3, t + 0.01);
+  gain.gain.setValueAtTime(0.3, t + dur - 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(gain).connect(audio.destination);
+  osc.start(t);
+  osc.stop(t + dur + 0.02);
+}
+function play(cue) {
+  if (cue === 'short') tone(880, 0.12);
+  if (cue === 'long') tone(660, 0.6);
+  if (cue === 'done') [0, 0.8, 1.6].forEach((d) => tone(660, 0.6, d));
+}
+
+// ---- screen wake lock ----
+let lock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !lock && navigator.wakeLock) {
+      lock = await navigator.wakeLock.request('screen');
+      lock.addEventListener('release', () => (lock = null));
+    } else if (!on && lock) {
+      await lock.release();
+    }
+  } catch {}
+}
+
+// ---- run loop ----
+let timer;
+function tick() {
+  clearTimeout(timer);
+  const now = elapsed();
+  const cue = cueBetween(state.phases, state.prevMs, now, state.settings.warn);
+  state.prevMs = now;
+  if (cue) play(cue);
+  if (stateAt(state.phases, now).done && running()) pause();
+  else if (now > 0) save('it.run', { presetId: state.run.id, elapsed: now });
+  render();
+  if (running()) timer = setTimeout(tick, 100);
+}
+
+function start() {
+  unlockAudio();
+  if (stateAt(state.phases, elapsed()).done) resetRun();
+  state.startedAt = Date.now() - state.pausedAt;
+  if (state.pausedAt === 0) play('short');
+  keepAwake(true);
+  tick();
+}
+
+function pause() {
+  if (!running()) return;
+  state.pausedAt = elapsed();
+  state.startedAt = null;
+  clearTimeout(timer);
+  keepAwake(false);
+}
+
+// ---- render ----
+const LABELS = { ready: 'GET READY', work: 'WORK', rest: 'REST', done: 'DONE' };
+const pad = (n) => String(n).padStart(2, '0');
+function clock(ms, round = Math.ceil) {
+  const s = round(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${Math.floor(s / 60)}:${pad(s % 60)}`;
+}
+const summary = (p) => `${p.work}s / ${p.rest}s × ${p.rounds}`;
+
+function render() {
+  const st = stateAt(state.phases, elapsed());
+  const kind = st.done ? 'done' : st.phase.kind;
+  const paused = !running() && st.elapsedMs > 0 && !st.done;
+  document.body.dataset.phase = kind;
+  document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  $('label').textContent = LABELS[kind] + (paused ? ' · PAUSED' : '');
+  $('count').textContent = clock(st.remainingMs);
+  $('count').classList.toggle('long', $('count').textContent.length > 4);
+  $('elapsed').textContent = clock(st.elapsedMs, Math.floor);
+  $('left').textContent = clock(st.leftMs);
+  $('round').textContent = `${st.done ? state.run.rounds : st.phase.round}/${state.run.rounds}`;
+  $('start').textContent = running() ? 'Pause' : paused ? 'Resume' : 'Start';
+  $('presetName').textContent = selected().name;
+  $('presetInfo').textContent = summary(selected());
+}
+
+// ---- wiring ----
+$('start').onclick = () => {
+  if (running()) pause();
+  else start();
+  render();
+};
+$('reset').onclick = resetRun;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !running()) return;
+  keepAwake(true);
+  tick();
+});
+
+// ---- boot: reopen paused where a reloaded or killed run left off ----
+const saved = load('it.run', null);
+if (state.presets.some((p) => p.id === saved?.presetId)) state.selectedId = saved.presetId;
+resetRun();
+const resumeMs = Number(saved?.elapsed) || 0;
+if (saved?.presetId === state.selectedId && resumeMs > 0 && resumeMs < stateAt(state.phases, 0).totalMs) {
+  state.pausedAt = state.prevMs = resumeMs;
+  save('it.run', saved);
+  render();
+}
+</script>
+</body>
+</html>
