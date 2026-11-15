@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#15803d"/>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" fill="#fff">
+    <text x="80" y="140" font-size="40" font-weight="700" letter-spacing="8">WORK · ROUND 3/8</text>
+    <text x="64" y="390" font-size="270" font-weight="800">0:20</text>
+    <text x="80" y="500" font-size="72" font-weight="800">Interval Timer</text>
+    <text x="80" y="560" font-size="34">Free HIIT &amp; Tabata timer · works offline</text>
+  </g>
+  <g transform="translate(790 150) scale(0.75)">
+    <path d="M256 286 V184 A102 102 0 0 1 358 286 Z" fill="#dc2626"/>
+    <g fill="none" stroke="#fff" stroke-width="28" stroke-linecap="round">
+      <circle cx="256" cy="286" r="116"/>
+      <path d="M220 126h72M256 126v42M350 180l24-24"/>
+    </g>
+  </g>
+</svg>

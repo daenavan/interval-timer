@@ -4,7 +4,36 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Interval Timer – free HIIT &amp; Tabata timer</title>
+<meta name="description" content="Free interval timer for HIIT, Tabata and circuit workouts. Big full-screen countdown, beeps, saved presets. Works offline — install it on your phone.">
+<link rel="canonical" href="https://daenavan.github.io/interval-timer/">
 <meta name="theme-color" content="#15803d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Intervals">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://daenavan.github.io/interval-timer/">
+<meta property="og:title" content="Interval Timer – free HIIT &amp; Tabata timer">
+<meta property="og:description" content="Big full-screen countdown, beeps, saved presets. Works offline — install it on your phone.">
+<meta property="og:image" content="https://daenavan.github.io/interval-timer/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Green interval timer screen showing 0:20, work, round 3 of 8">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Interval Timer",
+  "url": "https://daenavan.github.io/interval-timer/",
+  "description": "Free interval timer for HIIT, Tabata and circuit workouts, with full-screen colours, beeps and saved presets. Works offline.",
+  "applicationCategory": "HealthApplication",
+  "operatingSystem": "Any",
+  "browserRequirements": "Requires JavaScript",
+  "image": "https://daenavan.github.io/interval-timer/og.png",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
 <style>
   :root {
     color-scheme: dark;
@@ -64,6 +93,11 @@
   #presetList .pick { flex: 1; text-align: left; padding: 8px 12px; }
   #presetList .pick small { display: block; opacity: .75; }
   #presetList .on { outline: 2px solid #fff; }
+
+  .about { max-width: 40rem; margin: 0 auto; padding: 32px 16px calc(48px + env(safe-area-inset-bottom)); line-height: 1.6; }
+  .about h1 { margin: 0 0 8px; }
+  .about h2 { font-size: 1.15rem; margin: 24px 0 4px; }
+  .about a { color: inherit; }
 </style>
 </head>
 <body data-phase="work">
@@ -87,6 +121,24 @@
     <button id="start">Start</button>
   </div>
 </div>
+
+<section class="about">
+  <h1>Interval Timer</h1>
+  <p>A free, simple interval timer for HIIT, Tabata, boxing rounds and circuit training.
+    The whole screen turns green for work, red for rest and amber while you get ready, so you can
+    read it from across the room. It beeps at every switch, with optional 3-2-1 warning beeps.</p>
+  <h2>How to use it</h2>
+  <p>Tap the preset name at the top to pick a workout or make your own: work seconds, rest seconds
+    and rounds. Press Start. Tap a block in the timeline to jump to that round. Use ⚙ to change the
+    get-ready countdown, the warning beeps and the timeline.</p>
+  <h2>Install it on your phone</h2>
+  <p>iPhone: tap Share, then <b>Add to Home Screen</b>. Android: open the browser menu and tap
+    <b>Install app</b>. Once installed it works offline, and the screen stays on while the timer runs.
+    On iPhone the beeps play over your music and follow the ring/silent switch.</p>
+  <p>Your presets and settings are saved only on this device. No account, no tracking.</p>
+  <p>Inspired by <a href="https://github.com/greggman/interval-timer">greggman's interval timer</a>.
+    <a href="https://github.com/daenavan/interval-timer">Source on GitHub</a>.</p>
+</section>
 
 <dialog id="presetsDlg">
   <h2>Presets</h2>
@@ -404,6 +456,8 @@ document.addEventListener('visibilitychange', () => {
   keepAwake(true);
   tick();
 });
+
+navigator.serviceWorker?.register('./sw.js');
 
 // ---- boot: reopen paused where a reloaded or killed run left off ----
 const saved = load('it.run', null);
