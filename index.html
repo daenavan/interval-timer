@@ -37,12 +37,39 @@
   .controls button { min-height: 72px; font-size: 1.5rem; font-weight: 800; border-radius: 16px; }
   #reset { background: rgb(0 0 0 / .2); }
   #start { background: #fff; color: #111; }
+
+  #timeline { display: flex; gap: 3px; margin: 0 16px; padding: 4px; overflow-x: auto; border-radius: 10px; background: rgb(0 0 0 / .6); scrollbar-width: none; }
+  #timeline[hidden] { display: none; }
+  #timeline button { flex: var(--dur) 0 0; min-width: 24px; height: 40px; border-radius: 6px; font-size: .8rem; font-weight: 700; background: var(--c); }
+  #timeline .work { --c: var(--work); }
+  #timeline .rest { --c: var(--rest); }
+  #timeline .ready { --c: var(--ready); }
+  #timeline .past { opacity: .35; }
+  #timeline .now { outline: 3px solid #fff; outline-offset: -3px; }
+
+  dialog { background: #111827; color: #fff; border: 0; border-radius: 16px; padding: 20px; width: min(28rem, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgb(0 0 0 / .6); }
+  dialog h2 { margin: 0 0 12px; font-size: 1.25rem; }
+  dialog label { display: block; margin: 14px 0; }
+  dialog input:not([type=checkbox]) { display: block; width: 100%; margin-top: 4px; padding: 12px; font: inherit; font-size: 1.1rem; color: #fff; background: #1f2937; border: 1px solid #4b5563; border-radius: 10px; }
+  dialog .check { display: flex; align-items: center; gap: 12px; }
+  dialog .check input { width: 24px; height: 24px; margin: 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  dialog button { min-height: 48px; padding: 0 16px; border-radius: 10px; background: #374151; }
+  dialog .primary { background: #fff; color: #111; font-weight: 700; }
+  #deletePreset { margin-right: auto; background: #991b1b; }
+  #deletePreset:disabled { opacity: .4; cursor: not-allowed; }
+  #presetList { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  #presetList li { display: flex; gap: 8px; }
+  #presetList .pick { flex: 1; text-align: left; padding: 8px 12px; }
+  #presetList .pick small { display: block; opacity: .75; }
+  #presetList .on { outline: 2px solid #fff; }
 </style>
 </head>
 <body data-phase="work">
 <div class="app">
   <header>
-    <button id="preset" aria-label="Choose preset"><span id="presetName"></span><small id="presetInfo"></small></button>
+    <button id="preset"><span id="presetName"></span><small id="presetInfo"></small></button>
     <button id="settings" aria-label="Settings">⚙</button>
   </header>
   <main>
@@ -54,11 +81,49 @@
       <div><small>remaining</small><b id="left">0:00</b></div>
     </div>
   </main>
+  <div id="timeline" hidden></div>
   <div class="controls">
     <button id="reset">Reset</button>
     <button id="start">Start</button>
   </div>
 </div>
+
+<dialog id="presetsDlg">
+  <h2>Presets</h2>
+  <ul id="presetList"></ul>
+  <div class="row">
+    <button id="addPreset">Add preset</button>
+    <button class="primary" onclick="this.closest('dialog').close()">Close</button>
+  </div>
+</dialog>
+
+<dialog id="editDlg">
+  <form method="dialog" id="editForm">
+    <h2 id="editTitle">Edit preset</h2>
+    <label>Name <input name="name" maxlength="40" autocomplete="off"></label>
+    <label>Work (seconds) <input name="work" type="number" inputmode="numeric" min="1" max="3600" required></label>
+    <label>Rest (seconds) <input name="rest" type="number" inputmode="numeric" min="0" max="3600" required></label>
+    <label>Rounds <input name="rounds" type="number" inputmode="numeric" min="1" max="99" required></label>
+    <div class="row">
+      <button id="deletePreset" value="delete" formnovalidate>Delete</button>
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button value="save" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settingsDlg">
+  <form method="dialog" id="settingsForm">
+    <h2>Settings</h2>
+    <label class="check"><input type="checkbox" name="warn"> 3-2-1 warning beeps</label>
+    <label>Get-ready seconds (0 = off) <input name="leadIn" type="number" inputmode="numeric" min="0" max="60" required></label>
+    <label class="check"><input type="checkbox" name="timeline"> Round timeline (tap to jump)</label>
+    <div class="row">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button value="save" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
 
 <script type="module">
 import { STARTERS, normalizePreset, normalizeSettings, buildPhases, stateAt, cueBetween } from './timer.js';
@@ -94,10 +159,15 @@ function resetRun() {
   state.phases = buildPhases(state.run, state.settings);
   state.pausedAt = state.prevMs = 0;
   save('it.run', null);
+  buildTimeline();
   render();
 }
 
+// Not started yet, or finished: safe to rebuild the run from changed presets/settings.
+const idle = () => !running() && (state.pausedAt === 0 || stateAt(state.phases, state.pausedAt).done);
+
 function jumpTo(ms) {
+  unlockAudio();
   if (running()) state.startedAt = Date.now() - ms;
   else state.pausedAt = ms;
   state.prevMs = ms;
@@ -201,7 +271,126 @@ function render() {
   $('start').textContent = running() ? 'Pause' : paused ? 'Resume' : 'Start';
   $('presetName').textContent = selected().name;
   $('presetInfo').textContent = summary(selected());
+  renderTimeline(st.index);
 }
+
+// ---- timeline: one segment per phase, tap to jump ----
+let shownIndex = -1;
+function buildTimeline() {
+  const tl = $('timeline');
+  tl.replaceChildren(...state.phases.map((p) => {
+    const b = document.createElement('button');
+    b.className = p.kind;
+    b.style.setProperty('--dur', p.dur);
+    b.textContent = p.kind === 'work' ? p.round : '';
+    b.setAttribute('aria-label', p.kind === 'ready' ? 'Get ready' : `Round ${p.round} ${p.kind}`);
+    b.onclick = () => jumpTo(p.start);
+    return b;
+  }));
+  shownIndex = -1;
+}
+function renderTimeline(index) {
+  const tl = $('timeline');
+  tl.hidden = !state.settings.timeline;
+  if (tl.hidden || index === shownIndex) return;
+  shownIndex = index;
+  [...tl.children].forEach((b, i) => {
+    b.classList.toggle('past', i < index);
+    b.classList.toggle('now', i === index);
+  });
+  tl.children[Math.min(index, tl.children.length - 1)]?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+}
+
+// ---- presets ----
+const savePresets = () => save('it.presets', state.presets);
+let editingId = null;
+
+function renderPresetList() {
+  $('presetList').replaceChildren(...state.presets.map((p) => {
+    const li = document.createElement('li');
+    const pick = document.createElement('button');
+    pick.className = 'pick' + (p.id === state.selectedId ? ' on' : '');
+    pick.append(p.name, Object.assign(document.createElement('small'), { textContent: summary(p) }));
+    pick.onclick = () => selectPreset(p.id);
+    const edit = Object.assign(document.createElement('button'), { textContent: 'Edit' });
+    edit.setAttribute('aria-label', `Edit ${p.name}`);
+    edit.onclick = () => openEditor(p);
+    li.append(pick, edit);
+    return li;
+  }));
+}
+
+function selectPreset(id) {
+  $('presetsDlg').close();
+  if (id === state.selectedId && !idle()) return; // don't wipe a run by re-tapping its preset
+  state.selectedId = id;
+  save('it.selected', id);
+  resetRun();
+}
+
+function openEditor(p) {
+  editingId = p?.id ?? null;
+  const f = $('editForm').elements;
+  const v = p ?? { name: '', work: 30, rest: 15, rounds: 8 };
+  f.name.value = v.name;
+  f.work.value = v.work;
+  f.rest.value = v.rest;
+  f.rounds.value = v.rounds;
+  $('editTitle').textContent = p ? 'Edit preset' : 'New preset';
+  $('deletePreset').hidden = !p;
+  $('deletePreset').disabled = state.presets.length <= 1;
+  $('editDlg').returnValue = '';
+  $('editDlg').showModal();
+}
+
+$('editDlg').addEventListener('close', () => {
+  const action = $('editDlg').returnValue;
+  if (action === 'save') {
+    const f = $('editForm').elements;
+    const p = normalizePreset({ id: editingId ?? undefined, name: f.name.value, work: f.work.value, rest: f.rest.value, rounds: f.rounds.value });
+    const i = state.presets.findIndex((x) => x.id === p.id);
+    if (i >= 0) state.presets[i] = p;
+    else state.presets.push(p);
+    savePresets();
+    if (p.id === state.selectedId && idle()) resetRun(); // a run in progress keeps its copy
+  }
+  const name = state.presets.find((x) => x.id === editingId)?.name;
+  if (action === 'delete' && state.presets.length > 1 && confirm(`Delete "${name}"?`)) {
+    state.presets = state.presets.filter((x) => x.id !== editingId);
+    savePresets();
+    if (editingId === state.selectedId) {
+      state.selectedId = state.presets[0].id;
+      save('it.selected', state.selectedId);
+      resetRun();
+    }
+  }
+  renderPresetList();
+  render();
+});
+$('preset').onclick = () => {
+  renderPresetList();
+  $('presetsDlg').showModal();
+};
+$('addPreset').onclick = () => openEditor(null);
+
+// ---- settings ----
+$('settings').onclick = () => {
+  const f = $('settingsForm').elements;
+  f.warn.checked = state.settings.warn;
+  f.leadIn.value = state.settings.leadIn;
+  f.timeline.checked = state.settings.timeline;
+  $('settingsDlg').returnValue = '';
+  $('settingsDlg').showModal();
+};
+$('settingsDlg').addEventListener('close', () => {
+  if ($('settingsDlg').returnValue !== 'save') return;
+  const f = $('settingsForm').elements;
+  state.settings = normalizeSettings({ warn: f.warn.checked, leadIn: f.leadIn.value, timeline: f.timeline.checked });
+  save('it.settings', state.settings);
+  if (idle()) resetRun();
+  shownIndex = -1;
+  render();
+});
 
 // ---- wiring ----
 $('start').onclick = () => {
