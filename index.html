@@ -61,13 +61,13 @@
   #count.long { font-size: min(28vw, 42vh); }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; padding: 0 16px; }
   .stats b { display: block; font-size: clamp(1.25rem, 6vw, 2rem); font-variant-numeric: tabular-nums; }
-  .stats small { text-transform: uppercase; font-size: .75rem; letter-spacing: .08em; opacity: .9; }
+  .stats small { text-transform: uppercase; font-size: .75rem; letter-spacing: .08em; }
   .controls { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; padding: 16px; }
   .controls button { min-height: 72px; font-size: 1.5rem; font-weight: 800; border-radius: 16px; }
   #reset { background: rgb(0 0 0 / .2); }
   #start { background: #fff; color: #111; }
 
-  #timeline { display: flex; gap: 3px; margin: 0 16px; padding: 4px; overflow-x: auto; border-radius: 10px; background: rgb(0 0 0 / .6); scrollbar-width: none; }
+  #timeline { position: relative; display: flex; gap: 3px; margin: 0 16px; padding: 4px; overflow-x: auto; border-radius: 10px; background: rgb(0 0 0 / .6); scrollbar-width: none; }
   #timeline[hidden] { display: none; }
   #timeline button { flex: var(--dur) 0 0; min-width: 24px; height: 40px; border-radius: 6px; font-size: .8rem; font-weight: 700; background: var(--c); }
   #timeline .work { --c: var(--work); }
@@ -157,8 +157,8 @@
     <label>Rest (seconds) <input name="rest" type="number" inputmode="numeric" min="0" max="3600" required></label>
     <label>Rounds <input name="rounds" type="number" inputmode="numeric" min="1" max="99" required></label>
     <div class="row">
-      <button id="deletePreset" value="delete" formnovalidate>Delete</button>
-      <button value="cancel" formnovalidate>Cancel</button>
+      <button type="button" id="deletePreset" onclick="this.closest('dialog').close('delete')">Delete</button>
+      <button type="button" onclick="this.closest('dialog').close('cancel')">Cancel</button>
       <button value="save" class="primary">Save</button>
     </div>
   </form>
@@ -171,7 +171,7 @@
     <label>Get-ready seconds (0 = off) <input name="leadIn" type="number" inputmode="numeric" min="0" max="60" required></label>
     <label class="check"><input type="checkbox" name="timeline"> Round timeline (tap to jump)</label>
     <div class="row">
-      <button value="cancel" formnovalidate>Cancel</button>
+      <button type="button" onclick="this.closest('dialog').close('cancel')">Cancel</button>
       <button value="save" class="primary">Save</button>
     </div>
   </form>
@@ -249,6 +249,7 @@ function tone(freq, dur, delay = 0) {
   osc.stop(t + dur + 0.02);
 }
 function play(cue) {
+  if (audio && audio.state !== 'running') audio.resume(); // iOS suspends it on lock, calls, Siri
   if (cue === 'short') tone(880, 0.12);
   if (cue === 'long') tone(660, 0.6);
   if (cue === 'done') [0, 0.8, 1.6].forEach((d) => tone(660, 0.6, d));
@@ -275,8 +276,9 @@ function tick() {
   const cue = cueBetween(state.phases, state.prevMs, now, state.settings.warn);
   state.prevMs = now;
   if (cue) play(cue);
-  if (stateAt(state.phases, now).done && running()) pause();
-  else if (now > 0) save('it.run', { presetId: state.run.id, elapsed: now });
+  const done = stateAt(state.phases, now).done;
+  if (done) pause();
+  save('it.run', now > 0 && !done ? { presetId: state.run.id, elapsed: now } : null); // finished runs reopen idle
   render();
   if (running()) timer = setTimeout(tick, 100);
 }
@@ -350,7 +352,8 @@ function renderTimeline(index) {
     b.classList.toggle('past', i < index);
     b.classList.toggle('now', i === index);
   });
-  tl.children[Math.min(index, tl.children.length - 1)]?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  const el = tl.children[Math.min(index, tl.children.length - 1)];
+  if (el) tl.scrollTo({ left: el.offsetLeft - (tl.clientWidth - el.offsetWidth) / 2, behavior: 'smooth' }); // scroll the strip only, never the page
 }
 
 // ---- presets ----
