@@ -85,7 +85,7 @@
   dialog .check input { width: 24px; height: 24px; margin: 0; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   dialog button { min-height: 48px; padding: 0 16px; border-radius: 10px; background: #374151; }
-  dialog .primary { background: #fff; color: #111; font-weight: 700; }
+  dialog .primary, .update .primary { background: #fff; color: #111; font-weight: 700; }
   #deletePreset { margin-right: auto; background: #991b1b; }
   #deletePreset:disabled { opacity: .4; cursor: not-allowed; }
   #presetList { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -99,7 +99,6 @@
   .update[hidden] { display: none; }
   .update span { flex: 1; }
   .update button { min-height: 44px; padding: 0 14px; border-radius: 10px; background: #374151; }
-  .update .primary { background: #fff; color: #111; font-weight: 700; }
   .about { max-width: 40rem; margin: 0 auto; padding: 32px 16px calc(48px + env(safe-area-inset-bottom)); line-height: 1.6; }
   .about h1 { margin: 0 0 8px; }
   .about h2 { font-size: 1.15rem; margin: 24px 0 4px; }
@@ -220,7 +219,7 @@ const elapsed = () => (running() ? Date.now() - state.startedAt : state.pausedAt
 function resetRun(run = { ...selected(), leadIn: state.settings.leadIn }) {
   pause();
   state.run = run;
-  state.phases = buildPhases(run, run); // run carries leadIn too
+  state.phases = buildPhases(run, run.leadIn);
   state.pausedAt = state.prevMs = 0;
   save('it.run', null);
   buildTimeline();
@@ -327,8 +326,10 @@ function render() {
   const st = stateAt(state.phases, elapsed());
   const kind = st.done ? 'done' : st.phase.kind;
   const paused = !running() && st.elapsedMs > 0 && !st.done;
-  document.body.dataset.phase = kind;
-  document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  if (document.body.dataset.phase !== kind) { // style lookups only on a phase change, not 10× a second
+    document.body.dataset.phase = kind;
+    document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  }
   $('label').textContent = LABELS[kind] + (paused ? ' · PAUSED' : '');
   $('count').textContent = mmss(Math.ceil(st.remainingMs / 1000)); // a phase is at most 60:00; 1:00:00 would not fit
   $('count').classList.toggle('long', $('count').textContent.length > 4);

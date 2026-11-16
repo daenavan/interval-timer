@@ -4,21 +4,20 @@ import assert from 'node:assert/strict';
 import { buildPhases, stateAt, cueBetween, normalizePreset, normalizeSettings, STARTERS } from './timer.js';
 
 const T = { id: 't', name: 'T', work: 20, rest: 10, rounds: 2 };
-const S = (leadIn) => ({ warn: true, leadIn, timeline: true });
 
 test('buildPhases tabata with lead-in', () => {
-  const p = buildPhases(T, S(5));
+  const p = buildPhases(T, 5);
   assert.deepEqual(p.map(x => [x.kind, x.round, x.start, x.dur]),
     [['ready', 0, 0, 5000], ['work', 1, 5000, 20000], ['rest', 1, 25000, 10000], ['work', 2, 35000, 20000]]);
 });
 
 test('buildPhases rest 0 and leadIn 0 emit no empty phases', () => {
-  const p = buildPhases({ id: 'a', name: 'A', work: 30, rest: 0, rounds: 3 }, S(0));
+  const p = buildPhases({ id: 'a', name: 'A', work: 30, rest: 0, rounds: 3 }, 0);
   assert.deepEqual(p.map(x => x.kind), ['work', 'work', 'work']);
 });
 
 test('stateAt mid-phase, boundary, done', () => {
-  const p = buildPhases(T, S(0));
+  const p = buildPhases(T, 0);
   assert.equal(stateAt(p, 21000).phase.kind, 'rest');
   assert.equal(stateAt(p, 21000).remainingMs, 9000);
   assert.equal(stateAt(p, 20000).phase.kind, 'rest'); // boundary belongs to next phase
@@ -30,7 +29,7 @@ test('stateAt mid-phase, boundary, done', () => {
 });
 
 test('cueBetween warn, boundary, done', () => {
-  const p = buildPhases(T, S(0));
+  const p = buildPhases(T, 0);
   assert.equal(cueBetween(p, 16900, 17000, true), 'short'); // 3 s left
   assert.equal(cueBetween(p, 16900, 17000, false), null);
   assert.equal(cueBetween(p, 19950, 20050, true), 'long');
@@ -39,7 +38,7 @@ test('cueBetween warn, boundary, done', () => {
 });
 
 test('cueBetween large jump returns one cue', () => {
-  const p = buildPhases(T, S(0));
+  const p = buildPhases(T, 0);
   assert.equal(cueBetween(p, 1000, 40000, true), 'long');
   assert.equal(cueBetween(p, 1000, 90000, true), 'done');
 });
@@ -76,11 +75,11 @@ const sweep = (phases, warn) => {
 };
 
 test('rest 0: one long cue at the work-work boundary', () => {
-  const p = buildPhases({ id: 'z', name: 'Z', work: 5, rest: 0, rounds: 2 }, S(0));
+  const p = buildPhases({ id: 'z', name: 'Z', work: 5, rest: 0, rounds: 2 }, 0);
   assert.deepEqual(sweep(p, false), [[5000, 'long'], [10000, 'done']]);
 });
 
 test('a 2 s phase gets one warning beep, at 1 s left', () => {
-  const p = buildPhases({ id: 'w', name: 'W', work: 5, rest: 2, rounds: 2 }, S(0));
+  const p = buildPhases({ id: 'w', name: 'W', work: 5, rest: 2, rounds: 2 }, 0);
   assert.deepEqual(sweep(p, true).filter(([t]) => t >= 5000 && t <= 7000), [[5000, 'long'], [6000, 'short'], [7000, 'long']]);
 });

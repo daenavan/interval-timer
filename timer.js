@@ -33,13 +33,15 @@ export function normalizeSettings(s) {
 }
 
 // [ready] → work 1 → rest 1 → … → work N. No rest after the last round, no zero-length phases.
-export function buildPhases(preset, settings) {
+export function buildPhases(preset, leadIn) {
   const phases = [];
   let t = 0;
   const add = (kind, round, secs) => {
-    if (secs > 0) phases.push({ kind, round, start: t, dur: secs * 1000 }), (t += secs * 1000);
+    if (secs <= 0) return;
+    phases.push({ kind, round, start: t, dur: secs * 1000 });
+    t += secs * 1000;
   };
-  add('ready', 0, settings.leadIn);
+  add('ready', 0, leadIn);
   for (let r = 1; r <= preset.rounds; r++) {
     add('work', r, preset.work);
     if (r < preset.rounds) add('rest', r, preset.rest);
