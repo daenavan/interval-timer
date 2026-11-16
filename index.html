@@ -207,7 +207,7 @@ const state = {
   selectedId: load('it.selected', null),
   settings: normalizeSettings(load('it.settings', null)),
   phases: [],
-  run: null,        // copy of the preset this run uses
+  run: null,        // copy of the preset and lead-in this run uses
   startedAt: null,  // Date.now() - elapsed, while running
   pausedAt: 0,      // elapsed ms, while not running
   prevMs: 0,        // elapsed ms at the last tick, for cues
@@ -217,10 +217,10 @@ const selected = () => state.presets.find((p) => p.id === state.selectedId);
 const running = () => state.startedAt !== null;
 const elapsed = () => (running() ? Date.now() - state.startedAt : state.pausedAt);
 
-function resetRun() {
+function resetRun(run = { ...selected(), leadIn: state.settings.leadIn }) {
   pause();
-  state.run = { ...selected() };
-  state.phases = buildPhases(state.run, state.settings);
+  state.run = run;
+  state.phases = buildPhases(run, run); // run carries leadIn too
   state.pausedAt = state.prevMs = 0;
   save('it.run', null);
   buildTimeline();
@@ -274,6 +274,7 @@ async function keepAwake(on) {
     if (on && !lock && navigator.wakeLock) {
       lock = await navigator.wakeLock.request('screen');
       lock.addEventListener('release', () => (lock = null));
+      if (!running()) await lock.release(); // paused while the request was pending
     } else if (!on && lock) {
       await lock.release();
     }
@@ -290,7 +291,7 @@ function tick() {
   if (cue) play(cue);
   const done = stateAt(state.phases, now).done;
   if (done) pause();
-  save('it.run', now > 0 && !done ? { presetId: state.run.id, elapsed: now } : null); // finished runs reopen idle
+  save('it.run', now > 0 && !done ? { run: state.run, elapsed: now } : null); // finished runs reopen idle
   render();
   if (running()) timer = setTimeout(tick, 100);
 }
@@ -315,10 +316,10 @@ function pause() {
 // ---- render ----
 const LABELS = { ready: 'GET READY', work: 'WORK', rest: 'REST', done: 'DONE' };
 const pad = (n) => String(n).padStart(2, '0');
+const mmss = (s) => `${Math.floor(s / 60)}:${pad(s % 60)}`;
 function clock(ms, round = Math.ceil) {
   const s = round(ms / 1000);
-  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
-  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${Math.floor(s / 60)}:${pad(s % 60)}`;
+  return s >= 3600 ? `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}` : mmss(s);
 }
 const summary = (p) => `${p.work}s / ${p.rest}s × ${p.rounds}`;
 
@@ -329,7 +330,7 @@ function render() {
   document.body.dataset.phase = kind;
   document.querySelector('meta[name=theme-color]').content = getComputedStyle(document.body).getPropertyValue('--bg').trim();
   $('label').textContent = LABELS[kind] + (paused ? ' · PAUSED' : '');
-  $('count').textContent = clock(st.remainingMs);
+  $('count').textContent = mmss(Math.ceil(st.remainingMs / 1000)); // a phase is at most 60:00; 1:00:00 would not fit
   $('count').classList.toggle('long', $('count').textContent.length > 4);
   $('elapsed').textContent = clock(st.elapsedMs, Math.floor);
   $('left').textContent = clock(st.leftMs);
@@ -465,7 +466,7 @@ $('start').onclick = () => {
   else start();
   render();
 };
-$('reset').onclick = resetRun;
+$('reset').onclick = () => resetRun();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !running()) return;
   keepAwake(true);
@@ -495,12 +496,14 @@ sw?.register('./sw.js').then((reg) => {
 $('updateLater').onclick = () => ($('update').hidden = true);
 sw?.addEventListener('controllerchange', () => updating && location.reload());
 
-// ---- boot: reopen paused where a reloaded or killed run left off ----
+// ---- boot: reopen paused where a reloaded or killed run left off, on the copy it started with ----
 const saved = load('it.run', null);
-if (state.presets.some((p) => p.id === saved?.presetId)) state.selectedId = saved.presetId;
-resetRun();
+const id = saved?.run?.id ?? saved?.presetId; // v2 saved only presetId
 const resumeMs = Number(saved?.elapsed) || 0;
-if (saved?.presetId === state.selectedId && resumeMs > 0 && resumeMs < stateAt(state.phases, 0).totalMs) {
+const resume = resumeMs > 0 && state.presets.some((p) => p.id === id);
+if (resume) state.selectedId = id;
+resetRun(resume && saved.run ? { ...normalizePreset(saved.run), leadIn: normalizeSettings(saved.run).leadIn } : undefined);
+if (resume && resumeMs < stateAt(state.phases, 0).totalMs) {
   state.pausedAt = state.prevMs = resumeMs;
   save('it.run', saved);
   render();

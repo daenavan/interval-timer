@@ -1,7 +1,7 @@
 // Offline support with "Update available" prompts.
 // RELEASE RULE: bump VERSION whenever you ship a change. Phones download the new files in the
 // background and the app offers "Update"; without a bump, installed phones keep the old version.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `it-${VERSION}`;
 const FILES = ['./', './index.html', './timer.js', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 

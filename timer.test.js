@@ -63,3 +63,24 @@ test('STARTERS are the three spec presets', () => {
   assert.deepEqual(STARTERS.map(p => [p.id, p.work, p.rest, p.rounds]),
     [['tabata', 20, 10, 8], ['hiit', 40, 20, 10], ['classic', 50, 10, 30]]);
 });
+
+// Every cue a 100 ms tick loop would play, as [ms, cue]. Ticks are offset so they never land on a boundary.
+const sweep = (phases, warn) => {
+  const out = [];
+  const total = stateAt(phases, 0).totalMs;
+  for (let t = 37; t < total + 100; t += 100) {
+    const cue = cueBetween(phases, t - 100, t, warn);
+    if (cue) out.push([Math.floor(t / 1000) * 1000, cue]);
+  }
+  return out;
+};
+
+test('rest 0: one long cue at the work-work boundary', () => {
+  const p = buildPhases({ id: 'z', name: 'Z', work: 5, rest: 0, rounds: 2 }, S(0));
+  assert.deepEqual(sweep(p, false), [[5000, 'long'], [10000, 'done']]);
+});
+
+test('a 2 s phase gets one warning beep, at 1 s left', () => {
+  const p = buildPhases({ id: 'w', name: 'W', work: 5, rest: 2, rounds: 2 }, S(0));
+  assert.deepEqual(sweep(p, true).filter(([t]) => t >= 5000 && t <= 7000), [[5000, 'long'], [6000, 'short'], [7000, 'long']]);
+});
